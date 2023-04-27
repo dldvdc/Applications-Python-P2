@@ -3,13 +3,13 @@ from bs4 import BeautifulSoup as Bs
 from datetime import datetime
 import re
 import csv
+import os
 
 
 # ------------------------------------- CONSTANTES ------------------------------------- #
 
 
 URL = "http://books.toscrape.com"
-category_index_url = "http://books.toscrape.com/catalogue/category/books/mystery_3/index.html"
 
 
 # ------------------------------------- FONCTIONS ------------------------------------- #
@@ -65,7 +65,7 @@ def scrap_book_data(url: str) -> dict:
     book_img_url = URL + book_img["src"][5:]
 
     # Synthèses des données scrapées
-    book_data = {"product_page_url": book_url,
+    book_data = {"product_page_url": url,
                  "universal_product_code (upc)": book_upc,
                  "title": book_title,
                  "price_including_tax": book_price_tax,
@@ -79,72 +79,106 @@ def scrap_book_data(url: str) -> dict:
     return book_data
 
 
-# ------------------------------------- CODE PRINCIPAL -------------------------------------------- #
+def scrap_category_books_data(category_index_url: str) -> list:
+    # Récupération du code HTML
+    category_soup = url_to_soup(category_index_url)
+
+    # Scraping du nombre de produits indexés à cette catégorie
+    nbr_products = int(category_soup.find_all("strong")[1].text)
+
+    # Détermination du nombre de pages de la catégorie
+    nbr_pages = nbr_products // 20
+
+    # Détermination de la racine url commune aux pages catégorie
+    url_souche = category_index_url[:-10]
+
+    # Initialisation de la liste des urls de chaque page de la catégorie à partir de son index
+    category_urls = [category_index_url]
+
+    # Récupération des urls de chaque page de la catégorie
+    for i in range(2, nbr_pages + 2):
+        category_urls.append(url_souche + "page-" + str(i) + ".html")
+
+    # Initialisation de la liste de dictionnaires de données des livres scrapés
+    category_books_data = []
+
+    # Itération de chaque page de la catégorie
+    for category_url in category_urls:
+
+        # Récupération du code HTML
+        category_soup = url_to_soup(category_url)
+
+        # Récupération de la liste des livres de la page
+        books_blocs = list(category_soup.find_all("article", class_="product_pod"))
+
+        # Récupération des urls de chaque livre dans la page
+        for i in range(len(books_blocs)):
+            book_url = URL + "/catalogue" + books_blocs[i].find("a")["href"][8:]
+
+            # Récupération des données de chaque livre avec une fonction
+            category_books_data.append(scrap_book_data(book_url))
+
+    return category_books_data
 
 
-# Récupération du code HTML
-category_soup = url_to_soup(category_index_url)
+def category_data_to_csv(data: list):
+    # Récupération de la date
+    date = datetime.today().strftime("%m%d%Y")
 
-# Scraping du nombre de produits indexés à cette catégorie
-nbr_products = int(category_soup.find_all("strong")[1].text)
+    # Récupération du nom de la catégorie
+    c_name = data[0]["category"]
 
-# Détermination du nombre de pages de la catégorie
-nbr_pages = nbr_products // 20
+    # Formatage du titre
+    s_char = "()¨^°*‘«»\"°`#{}[]<>|\\/=~+*%$€?:&#;,"
+    char = '[%s]+' % re.escape(s_char)
+    c_name = re.sub(char, '', c_name)
+    f_name = c_name.title().replace(" ", "_")
 
-# Détermination de la racine url commune aux pages catégorie
-url_souche = category_index_url[:-10]
+    # Création du fichier csv
+    with open(f"output/csv/{f_name}-BooksToScrap-{date}.csv", "w", newline="", encoding="utf-8") as book_csv:
+        # Ecriture des entêtes du fichier CSV
+        writer = csv.DictWriter(book_csv, fieldnames=category_data[0].keys())
+        writer.writeheader()
 
-# Initialisation de la liste des urls de chaque page de la catégorie à partir de son index
-category_urls = [category_index_url]
+        # Ajout des données de chaque livre au fichier CSV
+        for book_data in range(len(category_data)):
+            writer.writerow(category_data[book_data])
 
-# Récupération des urls de chaque page de la catégorie
-for i in range(2, nbr_pages + 2):
-    category_urls.append(url_souche + "page-" + str(i) + ".html")
 
-# Initialisation de la liste de dictionnaires de données des livres scrapés
-category_books_data = []
-
-# Itération de chaque page de la catégorie
-for category_url in category_urls:
+def get_categories_dict(index_url: str) -> list:
 
     # Récupération du code HTML
-    category_soup = url_to_soup(category_url)
+    index_soup = url_to_soup(index_url)
 
-    # Récupération de la liste des livres de la page
-    books_blocs = list(category_soup.find_all("article", class_="product_pod"))
+    # Scraping du bloc contenant les noms et les urls de la catégorie
+    category_bloc = index_soup.find("ul", class_="nav nav-list").find_all("a")
 
-    # Initialisation de la liste des urls des livres de la page
-    books_urls = []
+    categories_index = []
 
-    # Récupération des urls de chaque livre dans la page
-    for i in range(len(books_blocs)):
-        book_url = URL + "/catalogue" + books_blocs[i].find("a")["href"][8:]
+    # Récupération des urls de chaque catégorie
+    for category in range(1, len(category_bloc)):
 
-        # Récupération des données de chaque livre avec une fonction
-        category_books_data.append(scrap_book_data(book_url))
+        # Récupération des urls de chaque catégorie en tant que valeur
+        index = URL + "/" + category_bloc[category]["href"]
+
+        # Synthèse des données
+        categories_index.append(index)
+
+    return categories_index
 
 
-# ------------------------------------- EXPORTATION DE DONNEESs ------------------------------------- #
+# ------------------------------------- CODE PRINCIPAL -------------------------------------------- #
 
-# Récupération de la date
-date = datetime.today().strftime("%m%d%Y")
+# Création du dossier output
+os.makedirs("output/csv", exist_ok=True)
 
-# Récupération du nom de la catégorie
-c_name = category_books_data[0]["category"]
+# Récupération des index de chaque catégorie
+categories = get_categories_dict(URL)
 
-# Formatage du titre
-s_char = "()¨^°*‘«»\"°`#{}[]<>|\\/=~+*%$€?:&#;,"
-char = '[%s]+' % re.escape(s_char)
-c_name = re.sub(char, '', c_name)
-f_name = c_name.title().replace(" ", "_")
+for category_index in categories:
 
-# Création du fichier csv
-with open(f"{f_name}-BooksToScrap-{date}.csv", "w", newline="", encoding="utf-8") as book_csv:
+    # Récupération des données de tous les livres de chaque catégorie
+    category_data = scrap_category_books_data(category_index)
 
-    # Ecriture des entêtes du fichier CSV
-    writer = csv.DictWriter(book_csv, fieldnames=category_books_data[0].keys())
-    writer.writeheader()
-
-    # Ajout des données de chaque livre au fichier CSV
-    for book_data in range(len(category_books_data)):
-        writer.writerow(category_books_data[book_data])
+    # Exportation des données de chaque catégorie dans un fichier csv
+    category_data_to_csv(category_data)
