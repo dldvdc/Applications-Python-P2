@@ -1,6 +1,7 @@
 from requests import get
 from bs4 import BeautifulSoup as Bs
-import re
+from datetime import datetime
+import re, csv
 
 URL = "http://books.toscrape.com"
 book_url = "http://books.toscrape.com/catalogue/a-light-in-the-attic_1000/index.html"
@@ -59,3 +60,21 @@ book_data = {"product_page_url": book_url,
              "category": book_category,
              "review_rating": book_rating,
              "image_url": book_img_url}
+
+# Récupération de la date
+date = datetime.today().strftime("%m%d%Y")
+
+s_char = "()¨^°*‘«»\"°`#{}[]<>|\\/=~+*%$€?:&#;,"
+char = '[%s]+' % re.escape(s_char)
+b_name = re.sub(char, '', book_title)
+f_name = b_name.title().replace(" ", "_")
+
+# Création du fichier csv
+with open(f"{f_name}-BookToScrap-{date}.csv", "w", newline="", encoding="utf-8") as book_csv:
+
+    # Ecriture des entêtes du fichier CSV
+    writer = csv.DictWriter(book_csv, fieldnames=book_data.keys())
+    writer.writeheader()
+    # Ajout des données du livre au fichier CSV
+
+    writer.writerow(book_data)
