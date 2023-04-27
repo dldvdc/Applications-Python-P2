@@ -6,9 +6,6 @@ import csv
 import os
 
 
-# ------------------------------------- CONSTANTES ------------------------------------- #
-
-
 URL = "http://books.toscrape.com"
 
 
@@ -21,6 +18,15 @@ def url_to_soup(url: str):
     # Récupération du code HTML dans un objet BeautifulSoup
     soup = Bs(response.content, "html.parser")
     return soup
+
+
+def format_title(title: str) -> str:
+    s_char = "()¨^°*‘«»\"°`#{}[]<>|\\/=~+*%$€?:&#;,"
+    char = '[%s]+' % re.escape(s_char)
+    title = re.sub(char, '', title)
+    name = title.title().replace(" ", "_")
+
+    return name
 
 
 def scrap_book_data(url: str) -> dict:
@@ -63,6 +69,16 @@ def scrap_book_data(url: str) -> dict:
     # Scraping du lien de l'image
     book_img = book_soup.find("img", alt=book_title)
     book_img_url = URL + book_img["src"][5:]
+
+    # Enregistrement de l'image dans un dossier categorie
+    img_title = format_title(book_title)
+    category_title = format_title(book_category)
+
+    os.makedirs(f"output/img/{category_title}", exist_ok=True)
+
+    with open(f"output/img/{category_title}/{img_title}.jpg", 'wb') as img_file:
+        response = get(book_img_url)
+        img_file.write(response.content)
 
     # Synthèses des données scrapées
     book_data = {"product_page_url": url,
