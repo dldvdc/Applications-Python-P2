@@ -5,6 +5,8 @@ import re
 import csv
 import os
 
+# ------------------------------------ CONSTANTES ------------------------------------- #
+
 
 URL = "http://books.toscrape.com"
 
@@ -13,17 +15,26 @@ URL = "http://books.toscrape.com"
 
 
 def url_to_soup(url: str):
+
     # Récupération de la réponse HTTP à partir de son url
     response = get(url)
+
     # Récupération du code HTML dans un objet BeautifulSoup
     soup = Bs(response.content, "html.parser")
+
     return soup
 
 
 def format_title(title: str) -> str:
-    s_char = "()¨^°*‘«»\"°`#{}[]<>|\\/=~+*%$€?:&#;,"
-    char = '[%s]+' % re.escape(s_char)
+
+    # Identification des caractères à retirer de la chaîne de caractères
+    wrong_char = "()¨^°*‘«»\"°`#{}[]<>|\\/=~+*%$€?:&#;,"
+    char = '[%s]+' % re.escape(wrong_char)
+
+    # Epuration du titre
     title = re.sub(char, '', title)
+
+    # Remplacement des espaces par des underscores
     name = title.title().replace(" ", "_")
 
     return name
@@ -41,11 +52,11 @@ def scrap_book_data(url: str) -> dict:
 
     # Scraping du prix avec taxe
     price_tax = book_soup.find("th", string="Price (excl. tax)").next_sibling.text
-    book_price_tax = float(price_tax[1:])
+    book_price_tax = float(price_tax.replace("£", ""))
 
     # Scraping du prix hors taxe
     price = book_soup.find("th", string="Price (excl. tax)").next_sibling.text
-    book_price = float(price[1:])
+    book_price = float(price.replace("£", ""))
 
     # Scraping du nombre d'exemplaires disponibles
     nbr_available = book_soup.find("th", string="Availability").next_sibling.next_sibling.text
@@ -69,16 +80,6 @@ def scrap_book_data(url: str) -> dict:
     # Scraping du lien de l'image
     book_img = book_soup.find("img", alt=book_title)
     book_img_url = URL + book_img["src"][5:]
-
-    # Enregistrement de l'image dans un dossier categorie
-    img_title = format_title(book_title)
-    category_title = format_title(book_category)
-
-    os.makedirs(f"output/img/{category_title}", exist_ok=True)
-
-    with open(f"output/img/{category_title}/{img_title}.jpg", 'wb') as img_file:
-        response = get(book_img_url)
-        img_file.write(response.content)
 
     # Synthèses des données scrapées
     book_data = {"product_page_url": url,
@@ -131,27 +132,55 @@ def scrap_category_books_data(category_index_url: str) -> list:
         for i in range(len(books_blocs)):
             book_url = URL + "/catalogue" + books_blocs[i].find("a")["href"][8:]
 
-            # Récupération des données de chaque livre avec une fonction
-            category_books_data.append(scrap_book_data(book_url))
+            # Récupération des données de chaque livre
+            book_data = scrap_book_data(book_url)
+
+            # Enregistrement de l'image dans un dossier categorie
+            download_book_img(book_data)
+
+            # Ajout des données de chaque livre à la liste de lq catégorie
+            category_books_data.append(book_data)
 
     return category_books_data
 
 
+def get_categories_index_urls(index_url: str) -> list:
+
+    # Récupération du code HTML
+    index_soup = url_to_soup(index_url)
+
+    # Scraping du bloc contenant les noms et les urls de la catégorie
+    category_bloc = index_soup.find("ul", class_="nav nav-list").find_all("a")
+
+    # Initialisation de la liste des
+    categories_index_urls = []
+
+    # Récupération des urls de chaque catégorie
+    for category in range(1, len(category_bloc)):
+
+        # Récupération des urls de chaque catégorie en tant que valeur
+        index = URL + "/" + category_bloc[category]["href"]
+
+        # Synthèse des données dans la liste
+        categories_index_urls.append(index)
+
+    return categories_index_urls
+
+
 def category_data_to_csv(data: list):
+
     # Récupération de la date
     date = datetime.today().strftime("%m%d%Y")
 
     # Récupération du nom de la catégorie
-    c_name = data[0]["category"]
+    category_name = data[0]["category"]
 
-    # Formatage du titre
-    s_char = "()¨^°*‘«»\"°`#{}[]<>|\\/=~+*%$€?:&#;,"
-    char = '[%s]+' % re.escape(s_char)
-    c_name = re.sub(char, '', c_name)
-    f_name = c_name.title().replace(" ", "_")
+    # Formatage du nom de la catégorie
+    format_title(category_name)
 
     # Création du fichier csv
-    with open(f"output/csv/{f_name}-BooksToScrap-{date}.csv", "w", newline="", encoding="utf-8") as book_csv:
+    with open(f"output/csv/{category_name}-BooksToScrap-{date}.csv", "w", newline="", encoding="utf-8") as book_csv:
+
         # Ecriture des entêtes du fichier CSV
         writer = csv.DictWriter(book_csv, fieldnames=category_data[0].keys())
         writer.writeheader()
@@ -161,40 +190,41 @@ def category_data_to_csv(data: list):
             writer.writerow(category_data[book_data])
 
 
-def get_categories_dict(index_url: str) -> list:
+def download_book_img(book_data: dict):
 
-    # Récupération du code HTML
-    index_soup = url_to_soup(index_url)
+    # Formatage du titre du livre
+    img_title = format_title(book_data["title"])
 
-    # Scraping du bloc contenant les noms et les urls de la catégorie
-    category_bloc = index_soup.find("ul", class_="nav nav-list").find_all("a")
+    # Formatage du nom de la catégorie
+    category_title = format_title(book_data["category"])
 
-    categories_index = []
+    # Création du répertoire de téléchargement
+    os.makedirs(f"output/img/{category_title}", exist_ok=True)
 
-    # Récupération des urls de chaque catégorie
-    for category in range(1, len(category_bloc)):
+    # Récupération et téléchargement du fichier image
+    with open(f"output/img/{category_title}/{img_title}.jpg", 'wb') as img_file:
 
-        # Récupération des urls de chaque catégorie en tant que valeur
-        index = URL + "/" + category_bloc[category]["href"]
+        # Récupération du fichier distant
+        response = get(book_data["image_url"])
 
-        # Synthèse des données
-        categories_index.append(index)
-
-    return categories_index
+        # Ecriture locale du fichier distant
+        img_file.write(response.content)
 
 
 # ------------------------------------- CODE PRINCIPAL -------------------------------------------- #
+
 
 # Création du dossier output
 os.makedirs("output/csv", exist_ok=True)
 
 # Récupération des index de chaque catégorie
-categories = get_categories_dict(URL)
+categories = get_categories_index_urls(URL)
 
+# Pour chaque catégorie :
 for category_index in categories:
 
-    # Récupération des données de tous les livres de chaque catégorie
+    # Récupération des données de tous les livres de la catégorie + Téléchargement de chaque couverture
     category_data = scrap_category_books_data(category_index)
 
-    # Exportation des données de chaque catégorie dans un fichier csv
+    # Exportation des données de la catégorie dans un fichier csv
     category_data_to_csv(category_data)
