@@ -34,6 +34,10 @@ def format_title(title: str) -> str:
     # Epuration du titre
     title = re.sub(char, '', title)
 
+    # Limiter la longueur du titre le cas échéant
+    if len(title) > 40:
+        title = title[:40]
+
     # Remplacement des espaces par des underscores
     name = title.title().replace(" ", "_")
 
